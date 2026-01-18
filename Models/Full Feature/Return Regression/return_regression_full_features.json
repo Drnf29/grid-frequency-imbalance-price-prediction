@@ -1,0 +1,1 @@
+["return_lag1", "return_lag2", "return_lag3", "return_lag4", "return_roll_std", "return_roll_mean", "Controlled output requirements in MW", "slope", "dev_mean", "dev_min", "dev_max", "mild_excursions", "deep_excursions", "var", "skewness", "kurtosis", "entropy", "max_abs_rocof", "mean_abs_rocof", "rocof_std", "rocof_shock_count", "shock_depth", "recovery_time", "post_shock_var"]
