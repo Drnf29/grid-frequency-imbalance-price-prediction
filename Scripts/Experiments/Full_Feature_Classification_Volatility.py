@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 import xgboost as xgb
-import json
 from sklearn.metrics import (
     accuracy_score,
     roc_auc_score,
@@ -13,39 +12,44 @@ from sklearn.metrics import (
     precision_recall_curve,
     average_precision_score
 )
-
-df = pd.read_csv(
-    "../../Aggregated Data/germany_2012_2016_aggregated.csv",
-    index_col=0,
-    parse_dates=True,
+from experiment_common import (
+    ALL_MICRO_FEATURES,
+    CONTROL_COL,
+    EXCURSION_FEATURES,
+    LEVEL_FEATURES,
+    MICRO_FEATURES,
+    PRICE_COL,
+    ROCOF_FEATURES,
+    SHOCK_RECOVERY_FEATURES,
+    TIME_FEATURES,
+    add_hour_and_day,
+    add_price_lags,
+    add_price_rolling_std,
+    balanced_binary_index,
+    keep_contiguous_rows,
+    load_aggregated_data,
+    market_price_features,
+    save_feature_list,
+    split_train_val_test,
 )
-df.index = pd.to_datetime(df.index)
-df = df.sort_index()
 
-price_col = "Price in €/MWh"
-control_col = "Controlled output requirements in MW"
+df = load_aggregated_data()
 
-df["hour"] = df.index.hour
-df["day_of_week"] = df.index.dayofweek
-
-for lag in [1, 2, 3, 4]:
-    df[f"price_lag{lag}"] = df[price_col].shift(lag)
-
-df["price_rolling_std"] = df[price_col].rolling(window=4).std()
+add_hour_and_day(df, hour_col="hour", day_col="day_of_week")
+add_price_lags(df, price_col=PRICE_COL)
+add_price_rolling_std(df, price_col=PRICE_COL)
 
 # IMPORTANT: Create returns BEFORE dropna
-df["simple_return"] = df[price_col].pct_change()
+df["simple_return"] = df[PRICE_COL].pct_change()
+df = keep_contiguous_rows(df, prev_steps=4, next_steps=1)
 
 df = df.dropna().copy()
 
-n = len(df)
-
-test_start = int(n * 0.80)
-val_start  = int(n * 0.70)
-
-df_train = df.iloc[:val_start].copy()
-df_val   = df.iloc[val_start:test_start].copy()
-df_test  = df.iloc[test_start:].copy()
+df_train, df_val, df_test = split_train_val_test(
+    df,
+    train_fraction=0.7,
+    test_start_fraction=0.8,
+)
 
 vol_threshold = df_train["simple_return"].abs().quantile(0.99)
 
@@ -64,38 +68,9 @@ df_train["spike_next"] = df_train["spike_next"].astype(int)
 df_val["spike_next"]   = df_val["spike_next"].astype(int)
 df_test["spike_next"]  = df_test["spike_next"].astype(int)
 
-market_features = [
-    price_col,
-    "price_lag1",
-    "price_lag2",
-    "price_lag3",
-    "price_lag4",
-    "price_rolling_std",
-    control_col,
-]
-
-micro_features = [
-    "slope",
-    "dev_mean",
-    "dev_min",
-    "dev_max",
-    "mild_excursions",
-    "deep_excursions",
-    "var",
-    "skewness",
-    "kurtosis",
-    "entropy",
-    "max_abs_rocof",
-    "mean_abs_rocof",
-    "rocof_std",
-    "rocof_shock_count",
-    "shock_depth",
-    "recovery_time",
-    "post_shock_var",
-]
-
-time_features = ["hour", "day_of_week"]
-
+market_features = market_price_features(price_col=PRICE_COL, control_col=CONTROL_COL)
+micro_features = MICRO_FEATURES
+time_features = TIME_FEATURES
 full_features = market_features + micro_features + time_features
 
 X_train_full = df_train[full_features]
@@ -111,19 +86,11 @@ print("Train spike rate:", y_train_full.mean().round(4))
 print("Val spike rate:", y_val.mean().round(4))
 print("Test spike rate:", y_test.mean().round(4))
 
-pos_idx = y_train_full[y_train_full == 1].index
-neg_idx = y_train_full[y_train_full == 0].index
-
-n_pos = len(pos_idx)
-neg_target_ratio = 5
-n_neg_sample = min(len(neg_idx), neg_target_ratio * n_pos)
-
-neg_sample_idx = np.random.RandomState(42).choice(
-    neg_idx, size=n_neg_sample, replace=False
+train_idx_balanced = balanced_binary_index(
+    y_train_full,
+    neg_to_pos_ratio=5,
+    random_state=42,
 )
-
-train_idx_balanced = np.concatenate([pos_idx, neg_sample_idx])
-train_idx_balanced = np.sort(train_idx_balanced)
 
 X_train = X_train_full.loc[train_idx_balanced]
 y_train = y_train_full.loc[train_idx_balanced]
@@ -167,8 +134,7 @@ best_thresh = thresholds[best_idx] if best_idx < len(thresholds) else 0.5
 
 model.save_model("vol_spike_full_xgb.json")
 
-with open("vol_spike_full_features.json", "w") as f:
-    json.dump(full_features, f)
+save_feature_list("vol_spike_full_features.json", full_features)
 
 np.save("vol_spike_full_return_threshold.npy", vol_threshold)
 np.save("vol_spike_full_decision_threshold.npy", best_thresh)
@@ -203,51 +169,12 @@ print("\nClassification Report:\n", classification_report(y_test, test_pred, dig
 print("\n================ ABLATION ANALYSIS (VOL SPIKES) ================")
 
 # Frequency microstructure:
-level_features = [
-    "slope",
-    "dev_mean",
-    "dev_min",
-    "dev_max",
-    "var",
-    "skewness",
-    "kurtosis",
-    "entropy",
-]
-
-excursion_features = [
-    "mild_excursions",
-    "deep_excursions",
-]
-
-rocof_features = [
-    "max_abs_rocof",
-    "mean_abs_rocof",
-    "rocof_std",
-    "rocof_shock_count",
-]
-
-shock_recovery_features = [
-    "shock_depth",
-    "recovery_time",
-    "post_shock_var",
-]
-
-all_micro = (
-    level_features +
-    excursion_features +
-    rocof_features +
-    shock_recovery_features
-)
-
-market_features = [
-    price_col,
-    "price_lag1",
-    "price_lag2",
-    "price_lag3",
-    "price_lag4",
-    "price_rolling_std",
-    control_col,
-]
+level_features = LEVEL_FEATURES
+excursion_features = EXCURSION_FEATURES
+rocof_features = ROCOF_FEATURES
+shock_recovery_features = SHOCK_RECOVERY_FEATURES
+all_micro = ALL_MICRO_FEATURES
+market_features = market_price_features(price_col=PRICE_COL, control_col=CONTROL_COL)
 
 ablation_sets = {
     "ALL_FEATURES": market_features + all_micro + time_features,
@@ -404,17 +331,11 @@ for train_years, test_years in scenarios:
     y_test_temp = df_test_temp["spike_next"]
 
     # Balance training
-    pos_idx = y_train_temp[y_train_temp == 1].index
-    neg_idx = y_train_temp[y_train_temp == 0].index
-
-    n_pos = len(pos_idx)
-    n_neg_sample = min(len(neg_idx), 5 * n_pos)
-
-    neg_sample_idx = np.random.RandomState(42).choice(
-        neg_idx, size=n_neg_sample, replace=False
+    train_idx_bal = balanced_binary_index(
+        y_train_temp,
+        neg_to_pos_ratio=5,
+        random_state=42,
     )
-
-    train_idx_bal = np.sort(np.concatenate([pos_idx, neg_sample_idx]))
 
     X_train_bal = X_train_temp.loc[train_idx_bal]
     y_train_bal = y_train_temp.loc[train_idx_bal]

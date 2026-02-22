@@ -9,17 +9,20 @@ from sklearn.metrics import (
     recall_score,
     f1_score,
 )
-
-features = pd.read_csv(
-    "../../Aggregated Data/germany_2012_2016_aggregated.csv",
-    index_col=0,
-    parse_dates=True,
+from experiment_common import (
+    PRICE_COL,
+    add_future_variance_target,
+    keep_contiguous_rows,
+    load_aggregated_data,
 )
+
+features = load_aggregated_data()
 
 df = features.copy()
 df = df.sort_index()
+df = keep_contiguous_rows(df, prev_steps=1)
 
-price_col = "Price in €/MWh"
+price_col = PRICE_COL
 df["pred_last_value"] = df[price_col].shift(1)
 
 window = 4
@@ -132,18 +135,15 @@ for name, res in results_cls.items():
 print("\n--- Regime Classification Baselines ---")
 
 df_reg = df.copy()
-
-df_reg["future_vol"] = (
-    df_reg[price_col]
-    .shift(-1)
-    .rolling(window=4)
-    .var()
-)
-
+add_future_variance_target(df_reg, source_col=price_col, horizon=4, out_col="future_vol")
 df_reg = df_reg.dropna()
 
-low_q = df_reg["future_vol"].quantile(0.60)
-high_q = df_reg["future_vol"].quantile(0.90)
+split_idx_reg = int(len(df_reg) * 0.8)
+train_reg = df_reg.iloc[:split_idx_reg].copy()
+test_reg = df_reg.iloc[split_idx_reg:].copy()
+
+low_q = train_reg["future_vol"].quantile(0.60)
+high_q = train_reg["future_vol"].quantile(0.90)
 
 def vol_regime(v):
     if v <= low_q:
@@ -153,19 +153,20 @@ def vol_regime(v):
     else:
         return 2
 
-df_reg["vol_regime"] = df_reg["future_vol"].apply(vol_regime)
+train_reg["vol_regime"] = train_reg["future_vol"].apply(vol_regime)
+test_reg["vol_regime"] = test_reg["future_vol"].apply(vol_regime)
 
-split_idx_reg = int(len(df_reg) * 0.8)
-
-y_train_reg = df_reg["vol_regime"].iloc[:split_idx_reg]
-y_test_reg = df_reg["vol_regime"].iloc[split_idx_reg:]
-
-test_reg = df_reg.iloc[split_idx_reg:].copy()
+y_train_reg = train_reg["vol_regime"]
+y_test_reg = test_reg["vol_regime"]
 
 majority_reg = y_train_reg.mode()[0]
 test_reg["pred_majority"] = majority_reg
 
-class_probs = y_train_reg.value_counts(normalize=True).sort_index().values
+class_probs = (
+    y_train_reg.value_counts(normalize=True)
+    .reindex([0, 1, 2], fill_value=0.0)
+    .values
+)
 rng = np.random.default_rng(seed=42)
 test_reg["pred_random"] = rng.choice(
     [0, 1, 2],
@@ -204,6 +205,55 @@ for name, res in results_regime.items():
     for metric, value in res.items():
         print(f"  {metric}: {value:.4f}")
 
+print("\n--- Classification Baselines (Volatility Spikes) ---")
+
+df_vol = df[[price_col]].copy()
+df_vol["simple_return"] = df_vol[price_col].pct_change()
+df_vol["simple_return"] = df_vol["simple_return"].replace([np.inf, -np.inf], np.nan)
+df_vol = keep_contiguous_rows(df_vol, prev_steps=1, next_steps=1)
+df_vol = df_vol.dropna(subset=["simple_return"]).copy()
+
+split_idx_vol = int(len(df_vol) * 0.8)
+train_vol = df_vol.iloc[:split_idx_vol].copy()
+test_vol = df_vol.iloc[split_idx_vol:].copy()
+
+vol_threshold = train_vol["simple_return"].abs().quantile(0.99)
+
+train_vol["spike_current"] = (train_vol["simple_return"].abs() > vol_threshold).astype(int)
+test_vol["spike_current"] = (test_vol["simple_return"].abs() > vol_threshold).astype(int)
+
+train_vol["spike_next"] = train_vol["spike_current"].shift(-1)
+test_vol["spike_next"] = test_vol["spike_current"].shift(-1)
+
+train_vol = train_vol.dropna(subset=["spike_next"]).copy()
+test_vol = test_vol.dropna(subset=["spike_next"]).copy()
+
+train_vol["spike_next"] = train_vol["spike_next"].astype(int)
+test_vol["spike_next"] = test_vol["spike_next"].astype(int)
+
+y_train_vol = train_vol["spike_next"]
+y_test_vol = test_vol["spike_next"]
+
+majority_vol = y_train_vol.mode()[0]
+test_vol["pred_majority"] = majority_vol
+
+p_spike_vol = y_train_vol.mean()
+rng = np.random.default_rng(seed=42)
+test_vol["pred_random"] = rng.binomial(1, p_spike_vol, size=len(test_vol))
+
+test_vol["last_return"] = test_vol["simple_return"].shift(1)
+test_vol["pred_last_price"] = (test_vol["last_return"].abs() > vol_threshold).astype(int)
+
+results_vol_cls = {}
+results_vol_cls["Majority"] = eval_classification(y_test_vol, test_vol["pred_majority"])
+results_vol_cls["Random"] = eval_classification(y_test_vol, test_vol["pred_random"])
+results_vol_cls["Last Price"] = eval_classification(y_test_vol, test_vol["pred_last_price"])
+
+for name, res in results_vol_cls.items():
+    print(f"\n{name}:")
+    for metric, value in res.items():
+        print(f"  {metric}: {value:.4f}")
+
 print("\n--- Return Regression Baselines ---")
 
 df_ret = df.copy()
@@ -216,6 +266,7 @@ df_ret["simple_return"] = df_ret["simple_return"].replace([np.inf, -np.inf], np.
 
 # 3) Next-period return target
 df_ret["next_return"] = df_ret["simple_return"].shift(-1)
+df_ret = keep_contiguous_rows(df_ret, prev_steps=1, next_steps=1)
 
 # 4) Drop bad rows BEFORE split
 df_ret = df_ret.dropna(subset=["simple_return", "next_return"]).copy()
@@ -285,7 +336,3 @@ for name, (mae, rmse) in results_ret_reg.items():
     print(f"\n{name}:")
     print(f"  MAE : {mae:.6f}")
     print(f"  RMSE: {rmse:.6f}")
-
-
-
-

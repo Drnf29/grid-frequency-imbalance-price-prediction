@@ -1,50 +1,34 @@
-import pandas as pd
 import numpy as np
-import json
 from xgboost import XGBClassifier
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, f1_score
-
-
-df = pd.read_csv(
-    "../../Aggregated Data/germany_2012_2016_aggregated.csv",
-    index_col=0,
-    parse_dates=True,
+from experiment_common import (
+    CONTROL_COL,
+    PRICE_COL,
+    add_future_variance_target,
+    add_price_lags,
+    add_price_rolling_std,
+    keep_contiguous_rows,
+    load_aggregated_data,
+    market_price_features,
+    save_feature_list,
+    split_train_test,
 )
 
-df.index = pd.to_datetime(df.index)
-df = df.sort_index()
+df = load_aggregated_data()
 
-price_col = "Price in €/MWh"
-control_col = "Controlled output requirements in MW"
-
-missing = [c for c in [price_col, control_col] if c not in df.columns]
+missing = [c for c in [PRICE_COL, CONTROL_COL] if c not in df.columns]
 if missing:
     raise ValueError(f"Missing required columns: {missing}")
 
-for lag in [1, 2, 3, 4]:
-    df[f"price_lag{lag}"] = df[price_col].shift(lag)
+add_price_lags(df, price_col=PRICE_COL)
+add_price_rolling_std(df, price_col=PRICE_COL)
+market_features = market_price_features(price_col=PRICE_COL, control_col=CONTROL_COL)
 
-df["price_rolling_std"] = df[price_col].rolling(window=4).std()
-
-market_features = [
-    price_col,
-    "price_lag1",
-    "price_lag2",
-    "price_lag3",
-    "price_lag4",
-    "price_rolling_std",
-    control_col,
-]
-
-df["future_vol"] = df[price_col].shift(-1).rolling(window=4).var()
-
-df["future_vol"] = df[price_col].shift(-1).rolling(window=4).var()
+add_future_variance_target(df, source_col=PRICE_COL, horizon=4, out_col="future_vol")
+df = keep_contiguous_rows(df, prev_steps=4, next_steps=4)
 
 df = df.dropna()
-split_idx = int(len(df) * 0.8)
-
-train_df = df.iloc[:split_idx].copy()
-test_df  = df.iloc[split_idx:].copy()
+train_df, test_df = split_train_test(df, train_fraction=0.8)
 
 low_q = train_df["future_vol"].quantile(0.60)
 high_q = train_df["future_vol"].quantile(0.90)
@@ -84,8 +68,7 @@ model = XGBClassifier(
 
 model.fit(X_train, y_train)
 model.save_model("vol_regime_market_only_xgb.json")
-with open("vol_regime_market_only_features.json", "w") as f:
-    json.dump(market_features, f)
+save_feature_list("vol_regime_market_only_features.json", market_features)
 np.save("vol_regime_market_only_low_threshold.npy", low_q)
 np.save("vol_regime_market_only_high_threshold.npy", high_q)
 

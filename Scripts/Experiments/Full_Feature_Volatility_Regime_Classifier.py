@@ -1,61 +1,36 @@
 import pandas as pd
 import numpy as np
-import json
 from xgboost import XGBClassifier
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, f1_score
-
-df = pd.read_csv(
-    "../../Aggregated Data/germany_2012_2016_aggregated.csv",
-    index_col=0,
-    parse_dates=True,
+from experiment_common import (
+    ALL_MICRO_FEATURES,
+    CONTROL_COL,
+    EXCURSION_FEATURES,
+    LEVEL_FEATURES,
+    MICRO_FEATURES,
+    PRICE_COL,
+    ROCOF_FEATURES,
+    SHOCK_RECOVERY_FEATURES,
+    add_future_variance_target,
+    add_price_lags,
+    add_price_rolling_std,
+    keep_contiguous_rows,
+    load_aggregated_data,
+    market_price_features,
+    save_feature_list,
 )
-df.index = pd.to_datetime(df.index)
-df = df.sort_index()
 
-price_col = "Price in €/MWh"
-control_col = "Controlled output requirements in MW"
+df = load_aggregated_data()
 
-for lag in [1, 2, 3, 4]:
-    df[f"price_lag{lag}"] = df[price_col].shift(lag)
+add_price_lags(df, price_col=PRICE_COL)
+add_price_rolling_std(df, price_col=PRICE_COL)
 
-df["price_rolling_std"] = df[price_col].rolling(window=4).std()
-df["future_vol"] = (
-    df[price_col]
-    .shift(-1)
-    .rolling(window=4)
-    .var()
-)
+add_future_variance_target(df, source_col=PRICE_COL, horizon=4, out_col="future_vol")
+df = keep_contiguous_rows(df, prev_steps=4, next_steps=4)
 df = df.dropna()
 
-market_features = [
-    price_col,
-    "price_lag1",
-    "price_lag2",
-    "price_lag3",
-    "price_lag4",
-    "price_rolling_std",
-    control_col,
-]
-
-micro_features = [
-    "slope",
-    "dev_mean",
-    "dev_min",
-    "dev_max",
-    "mild_excursions",
-    "deep_excursions",
-    "var",
-    "skewness",
-    "kurtosis",
-    "entropy",
-    "max_abs_rocof",
-    "mean_abs_rocof",
-    "rocof_std",
-    "rocof_shock_count",
-    "shock_depth",
-    "recovery_time",
-    "post_shock_var",
-]
+market_features = market_price_features(price_col=PRICE_COL, control_col=CONTROL_COL)
+micro_features = MICRO_FEATURES
 
 features = market_features + micro_features
 
@@ -104,8 +79,7 @@ model.fit(X_train, y_train)
 
 model.save_model("vol_regime_full_xgb.json")
 
-with open("vol_regime_full_features.json", "w") as f:
-    json.dump(features, f)
+save_feature_list("vol_regime_full_features.json", features)
 
 np.save("vol_regime_full_low_threshold.npy", low_q)
 np.save("vol_regime_full_high_threshold.npy", high_q)
@@ -138,51 +112,12 @@ print(
 print("\n================ ABLATION ANALYSIS (VOL REGIME) ================")
 
 # Frequency microstructure:
-level_features = [
-    "slope",
-    "dev_mean",
-    "dev_min",
-    "dev_max",
-    "var",
-    "skewness",
-    "kurtosis",
-    "entropy",
-]
-
-excursion_features = [
-    "mild_excursions",
-    "deep_excursions",
-]
-
-rocof_features = [
-    "max_abs_rocof",
-    "mean_abs_rocof",
-    "rocof_std",
-    "rocof_shock_count",
-]
-
-shock_recovery_features = [
-    "shock_depth",
-    "recovery_time",
-    "post_shock_var",
-]
-
-all_micro = (
-    level_features +
-    excursion_features +
-    rocof_features +
-    shock_recovery_features
-)
-
-market_features = [
-    price_col,
-    "price_lag1",
-    "price_lag2",
-    "price_lag3",
-    "price_lag4",
-    "price_rolling_std",
-    control_col,
-]
+level_features = LEVEL_FEATURES
+excursion_features = EXCURSION_FEATURES
+rocof_features = ROCOF_FEATURES
+shock_recovery_features = SHOCK_RECOVERY_FEATURES
+all_micro = ALL_MICRO_FEATURES
+market_features = market_price_features(price_col=PRICE_COL, control_col=CONTROL_COL)
 
 ablation_sets = {
     "ALL_FEATURES": market_features + all_micro,

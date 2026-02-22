@@ -1,46 +1,24 @@
-import pandas as pd
-import json
 import numpy as np
 from xgboost import XGBClassifier
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, average_precision_score
-
-features = pd.read_csv(
-    "../../Aggregated Data/germany_2012_2016_aggregated.csv",
-    index_col=0,
-    parse_dates=True,
+from experiment_common import (
+    PRICE_COL,
+    build_market_only_price_frame,
+    keep_contiguous_rows,
+    load_aggregated_data,
+    save_feature_list,
+    split_train_test,
 )
 
-df = features.copy()
-df.index = pd.to_datetime(df.index)
-df = df.sort_index()
-
-df_market = df[['Price in €/MWh', 'Controlled output requirements in MW']].copy()
-
-for i in [1, 2, 3, 4]:
-    df_market[f'price_lag{i}'] = df_market['Price in €/MWh'].shift(i)
-
-df_market['price_roll_mean_4'] = df_market['Price in €/MWh'].rolling(4).mean()
-df_market['price_roll_std_4']  = df_market['Price in €/MWh'].rolling(4).std()
-
-df_market['price_change'] = df_market['Price in €/MWh'].diff()
-
-df_market['MW_lag1']  = df_market['Controlled output requirements in MW'].shift(1)
-df_market['MW_delta'] = (
-    df_market['Controlled output requirements in MW']
-    - df_market['MW_lag1']
-)
-
-df_market['hour'] = df.index.hour
-df_market['dayofweek'] = df.index.dayofweek
-df_market['month'] = df.index.month
+df = load_aggregated_data()
+df_market = build_market_only_price_frame(df)
 df_market = df_market.dropna()
 
-df_market['next_price'] = df_market['Price in €/MWh'].shift(-1)
+df_market['next_price'] = df_market[PRICE_COL].shift(-1)
+df_market = keep_contiguous_rows(df_market, prev_steps=4, next_steps=1)
 df_market = df_market.dropna()  # drop last row with NaN next_price
 
-split_idx = int(len(df_market) * 0.8)
-train = df_market.iloc[:split_idx].copy()
-test  = df_market.iloc[split_idx:].copy()
+train, test = split_train_test(df_market, train_fraction=0.8)
 
 spike_threshold = train['next_price'].quantile(0.9)
 
@@ -49,7 +27,7 @@ test['spike']  = (test['next_price']  > spike_threshold).astype(int)
 
 feature_cols = [
     col for col in df_market.columns
-    if col not in ['Price in €/MWh', 'next_price', 'spike']
+    if col not in [PRICE_COL, 'next_price', 'spike']
 ]
 
 X_train = train[feature_cols]
@@ -71,19 +49,19 @@ clf = XGBClassifier(
 
 clf.fit(X_train, y_train)
 clf.save_model("price_spike_market_only_xgb.json")
-with open("price_spike_market_only_features.json", "w") as f:
-    json.dump(feature_cols, f)
+save_feature_list("price_spike_market_only_features.json", feature_cols)
 np.save("price_spike_market_only_price_threshold.npy", spike_threshold)
 decision_threshold = 0.5
 np.save("price_spike_market_only_decision_threshold.npy", decision_threshold)
 
-y_pred = clf.predict(X_test)
+y_pred_prob = clf.predict_proba(X_test)[:, 1]
+y_pred = (y_pred_prob > decision_threshold).astype(int)
 
 acc  = accuracy_score(y_test, y_pred)
 prec = precision_score(y_test, y_pred, zero_division=0)
 rec  = recall_score(y_test, y_pred, zero_division=0)
 f1   = f1_score(y_test, y_pred, zero_division=0)
-pr_auc = average_precision_score(y_test, y_pred) 
+pr_auc = average_precision_score(y_test, y_pred_prob)
 
 print("\n=== Layer B (Market-Only) Spike Classification ===")
 print("Accuracy :", round(acc, 4))

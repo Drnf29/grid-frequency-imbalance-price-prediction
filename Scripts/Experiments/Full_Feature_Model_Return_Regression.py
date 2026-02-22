@@ -1,21 +1,25 @@
 import pandas as pd
 import numpy as np
-import json
 from xgboost import XGBRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error
-
-df = pd.read_csv(
-    "../../Aggregated Data/germany_2012_2016_aggregated.csv",
-    index_col=0,
-    parse_dates=True,
+from experiment_common import (
+    ALL_MICRO_FEATURES,
+    CONTROL_COL,
+    EXCURSION_FEATURES,
+    LEVEL_FEATURES,
+    MICRO_FEATURES,
+    PRICE_COL,
+    ROCOF_FEATURES,
+    SHOCK_RECOVERY_FEATURES,
+    keep_contiguous_rows,
+    load_aggregated_data,
+    market_return_features,
+    save_feature_list,
 )
-df.index = pd.to_datetime(df.index)
-df = df.sort_index()
 
-price_col = "Price in €/MWh"
-control_col = "Controlled output requirements in MW"
+df = load_aggregated_data()
 
-df["simple_return"] = df[price_col].pct_change()
+df["simple_return"] = df[PRICE_COL].pct_change()
 df["simple_return"] = df["simple_return"].replace([np.inf, -np.inf], np.nan)
 
 # Lag return features
@@ -27,24 +31,13 @@ df["return_roll_std"] = df["simple_return"].rolling(window=4).std()
 df["return_roll_mean"] = df["simple_return"].rolling(window=4).mean()
 
 # Market + micro features (same micro features as before)
-micro_features = [
-    "slope","dev_mean","dev_min","dev_max",
-    "mild_excursions","deep_excursions","var",
-    "skewness","kurtosis","entropy",
-    "max_abs_rocof","mean_abs_rocof","rocof_std",
-    "rocof_shock_count","shock_depth",
-    "recovery_time","post_shock_var",
-]
-
-market_features = [
-    "return_lag1","return_lag2","return_lag3","return_lag4",
-    "return_roll_std","return_roll_mean",
-    control_col
-]
+micro_features = MICRO_FEATURES
+market_features = market_return_features(control_col=CONTROL_COL)
 
 full_features = market_features + micro_features
 
 df["y_next"] = df["simple_return"].shift(-1)
+df = keep_contiguous_rows(df, prev_steps=4, next_steps=1)
 
 df = df.dropna(subset=full_features + ["y_next"]).copy()
 
@@ -133,8 +126,7 @@ final_model = XGBRegressor(
 final_model.fit(X_train_full, y_train_best)
 final_model.save_model("return_regression_full_xgb.json")
 
-with open("return_regression_full_features.json", "w") as f:
-    json.dump(full_features, f)
+save_feature_list("return_regression_full_features.json", full_features)
     
 y_pred_best = final_model.predict(X_test_full)
 
@@ -152,36 +144,12 @@ print("RMSE:", round(final_rmse, 6))
 print("\n================ ABLATION ANALYSIS (RETURN REGRESSION) ================")
 
 # Frequency microstructure:
-level_features = [
-    "slope","dev_mean","dev_min","dev_max",
-    "var","skewness","kurtosis","entropy",
-]
-
-excursion_features = [
-    "mild_excursions","deep_excursions",
-]
-
-rocof_features = [
-    "max_abs_rocof","mean_abs_rocof",
-    "rocof_std","rocof_shock_count",
-]
-
-shock_recovery_features = [
-    "shock_depth","recovery_time","post_shock_var",
-]
-
-all_micro = (
-    level_features +
-    excursion_features +
-    rocof_features +
-    shock_recovery_features
-)
-
-market_features = [
-    "return_lag1","return_lag2","return_lag3","return_lag4",
-    "return_roll_std","return_roll_mean",
-    control_col
-]
+level_features = LEVEL_FEATURES
+excursion_features = EXCURSION_FEATURES
+rocof_features = ROCOF_FEATURES
+shock_recovery_features = SHOCK_RECOVERY_FEATURES
+all_micro = ALL_MICRO_FEATURES
+market_features = market_return_features(control_col=CONTROL_COL)
 
 ablation_sets = {
     "ALL_FEATURES": market_features + all_micro,
