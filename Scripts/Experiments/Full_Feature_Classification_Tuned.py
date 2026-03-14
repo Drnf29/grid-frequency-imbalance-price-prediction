@@ -139,11 +139,7 @@ print("PR-AUC  :", round(pr_auc, 4))
 print("\nConfusion Matrix:\n", confusion_matrix(y_test, test_pred))
 print("\nClassification Report:\n", classification_report(y_test, test_pred, digits=4))
 
-# ==========================================================
-# ABLATION ANALYSIS (Micro Feature Family Removal)
-# ==========================================================
-
-print("\n================ ABLATION ANALYSIS ================")
+print("\n=== ABLATION ANALYSIS ===")
 
 # Frequency microstructure:
 level_features = LEVEL_FEATURES
@@ -248,11 +244,7 @@ df_ablation["Delta_F1"]  = df_ablation["F1"] - baseline_f1
 print("\n=== Ablation Summary (Sorted by ΔAUC) ===")
 print(df_ablation.sort_values("Delta_AUC"))
 
-# ==========================================================
-# TEMPORAL GENERALISATION (Expanding Window)
-# ==========================================================
-
-print("\n================ TEMPORAL GENERALISATION ================")
+print("\n=== TEMPORAL GENERALISATION ===")
 
 df["year"] = df.index.year
 years = df["year"]

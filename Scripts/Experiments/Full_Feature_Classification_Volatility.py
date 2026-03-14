@@ -162,11 +162,7 @@ print("Recall   :", round(rec, 4))
 print("\nConfusion Matrix:\n", confusion_matrix(y_test, test_pred))
 print("\nClassification Report:\n", classification_report(y_test, test_pred, digits=4))
 
-# ==========================================================
-# ABLATION ANALYSIS (Volatility Spike Classification)
-# ==========================================================
-
-print("\n================ ABLATION ANALYSIS (VOL SPIKES) ================")
+print("\n=== ABLATION ANALYSIS (VOL SPIKES) ===")
 
 # Frequency microstructure:
 level_features = LEVEL_FEATURES
@@ -266,11 +262,7 @@ df_ablation["Delta_PR_AUC"] = df_ablation["PR_AUC"] - baseline_pr
 print("\n=== Volatility Ablation Summary ===")
 print(df_ablation.sort_values("Delta_AUC"))
 
-# ==========================================================
-# TEMPORAL GENERALISATION (Volatility Spike Classification)
-# ==========================================================
-
-print("\n================ TEMPORAL GENERALISATION (VOL SPIKES) ================")
+print("\n=== TEMPORAL GENERALISATION (VOL SPIKES) ===")
 
 df_temp = df.copy()
 df_temp["year"] = df_temp.index.year

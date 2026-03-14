@@ -50,7 +50,6 @@ full_features = (
     + time_features
 )
 
-# ---------- IMPORTANT: build splits BEFORE label, but compute threshold on train rows ----------
 df = df.dropna(subset=full_features).copy()
 
 n = len(df)

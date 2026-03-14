@@ -1,6 +1,5 @@
 import json
 from pathlib import Path
-
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -111,7 +110,7 @@ st.markdown(
 st.markdown(
     """
 <div class="app-header">
-  <h2 style="margin:0;">Quant Risk Analysis Dashboard</h2>
+  <h2 style="margin:0;">Risk Analysis Dashboard</h2>
   <p style="margin:0.25rem 0 0 0; opacity:0.9;">
     German balancing market, 2012-2016, with model comparison and tail-risk views
   </p>

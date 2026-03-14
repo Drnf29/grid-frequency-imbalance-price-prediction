@@ -105,11 +105,7 @@ print(
     )
 )
 
-# ==========================================================
-# ABLATION ANALYSIS (Volatility Regime Classification)
-# ==========================================================
-
-print("\n================ ABLATION ANALYSIS (VOL REGIME) ================")
+print("\n=== ABLATION ANALYSIS (VOL REGIME) ===")
 
 # Frequency microstructure:
 level_features = LEVEL_FEATURES
@@ -192,12 +188,7 @@ df_ablation["Delta_Macro_F1"] = df_ablation["Macro_F1"] - base_macro
 print("\n=== Volatility Regime Ablation Summary (sorted by ΔMacro_F1) ===")
 print(df_ablation.sort_values("Delta_Macro_F1"))
 
-
-# ==========================================================
-# TEMPORAL GENERALISATION (Volatility Regime Classification)
-# ==========================================================
-
-print("\n================ TEMPORAL GENERALISATION (VOL REGIME) ================")
+print("\n=== TEMPORAL GENERALISATION (VOL REGIME) ===")
 
 df_temp = df.copy()
 df_temp["year"] = df_temp.index.year

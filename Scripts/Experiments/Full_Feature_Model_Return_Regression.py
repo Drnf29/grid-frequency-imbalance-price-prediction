@@ -137,11 +137,7 @@ print("\n=== Final Return Regression Model ===")
 print("MAE :", round(final_mae, 6))
 print("RMSE:", round(final_rmse, 6))
 
-# ==========================================================
-# ABLATION ANALYSIS (Return Regression)
-# ==========================================================
-
-print("\n================ ABLATION ANALYSIS (RETURN REGRESSION) ================")
+print("\n=== ABLATION ANALYSIS (RETURN REGRESSION) ===")
 
 # Frequency microstructure:
 level_features = LEVEL_FEATURES
@@ -207,11 +203,7 @@ df_ablation["Delta_MAE"] = df_ablation["MAE"] - base_mae
 print("\n=== Return Regression Ablation Summary (sorted by Delta_MAE) ===")
 print(df_ablation.sort_values("Delta_MAE"))
 
-# ==========================================================
-# TEMPORAL GENERALISATION (Return Regression)
-# ==========================================================
-
-print("\n================ TEMPORAL GENERALISATION (RETURN REGRESSION) ================")
+print("\n=== TEMPORAL GENERALISATION (RETURN REGRESSION) ===")
 
 df_temp = df.copy()
 df_temp["year"] = df_temp.index.year

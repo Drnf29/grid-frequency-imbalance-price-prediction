@@ -78,10 +78,6 @@ print("\n=== Layer C: Market + Micro-signal Regression ===")
 print("MAE :", mae)
 print("RMSE:", rmse)
 
-# ==========================================================
-# ABLATION ANALYSIS (Price Regression)
-# ==========================================================
-
 print("\n================ ABLATION ANALYSIS (PRICE REGRESSION) ================")
 
 # Frequency microstructure:
@@ -143,11 +139,7 @@ df_ablation["Delta_MAE"] = df_ablation["MAE"] - base_mae
 print("\n=== Price Regression Ablation Summary (sorted by Delta_MAE) ===")
 print(df_ablation.sort_values("Delta_MAE"))
 
-# ==========================================================
-# TEMPORAL GENERALISATION (Price Regression)
-# ==========================================================
-
-print("\n================ TEMPORAL GENERALISATION (PRICE REGRESSION) ================")
+print("\n===TEMPORAL GENERALISATION (PRICE REGRESSION) ===")
 
 df_temp = df.copy()
 df_temp["year"] = df_temp.index.year
