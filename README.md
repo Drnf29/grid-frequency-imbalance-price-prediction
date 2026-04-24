@@ -168,5 +168,3 @@ Potential extensions include:
 
 ## Author
 Diogo Fernandes  
-
-<img width="462" height="690" alt="image" src="https://github.com/user-attachments/assets/f16d366f-bd2f-41f7-a4a9-e3663a2fa7b9" />
