@@ -163,8 +163,3 @@ Potential extensions include:
 - analysing higher frequency signals
 - improving rare event detection for price spikes
 - integrating additional market or generation data
-
----
-
-## Author
-Diogo Fernandes  
